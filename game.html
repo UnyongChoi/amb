@@ -67,26 +67,19 @@
     sun.position.set(10, 18, 8);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left   = -22;
-    sun.shadow.camera.right  =  22;
-    sun.shadow.camera.top    =  22;
-    sun.shadow.camera.bottom = -22;
-    sun.shadow.camera.far    =  60;
-    scene.add(sun);
-    scene.add(sun.target);
+    sun.shadow.camera.left = -22; sun.shadow.camera.right = 22;
+    sun.shadow.camera.top = 22;  sun.shadow.camera.bottom = -22;
+    sun.shadow.camera.far = 60;
+    scene.add(sun); scene.add(sun.target);
 
     // ── Ground ────────────────────────────────────────────────────────
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(130, 130),
       new THREE.MeshStandardMaterial({ color: 0x79C440, roughness: 0.95 })
     );
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    scene.add(ground);
+    ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
     const grid = new THREE.GridHelper(130, 52, 0x5fa832, 0x5fa832);
-    grid.material.opacity = 0.22;
-    grid.material.transparent = true;
-    scene.add(grid);
+    grid.material.opacity = 0.22; grid.material.transparent = true; scene.add(grid);
 
     // ── Decorations ───────────────────────────────────────────────────
     const mTrunk = new THREE.MeshStandardMaterial({ color: 0x7a4f2e, roughness: 0.9 });
@@ -116,9 +109,7 @@
       new THREE.CircleGeometry(1.0, 24),
       new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:0.18, depthWrite:false })
     );
-    shadowBlob.rotation.x = -Math.PI / 2;
-    shadowBlob.position.y = 0.02;
-    scene.add(shadowBlob);
+    shadowBlob.rotation.x = -Math.PI/2; shadowBlob.position.y = 0.02; scene.add(shadowBlob);
 
     // ── 재료 ─────────────────────────────────────────────────────────
     const matGreen  = new THREE.MeshStandardMaterial({ color:0x8FBA3A, roughness:0.7, metalness:0.05 });
@@ -127,8 +118,7 @@
     const matMouth  = new THREE.MeshStandardMaterial({ color:0x2a4d1c, roughness:0.9, side:THREE.DoubleSide });
     const matCap    = new THREE.MeshStandardMaterial({ color:0x6A9628, roughness:0.7 });
     const matLine   = new THREE.LineBasicMaterial({ color:0x000000 });
-    const matPanel  = new THREE.MeshStandardMaterial({ color:0x5e9e1e, roughness:0.45, metalness:0.3 });
-    const matCannon = new THREE.MeshStandardMaterial({ color:0x1c1c1c, roughness:0.4, metalness:0.8 });
+    const matCannon = new THREE.MeshStandardMaterial({ color:0x1c1c1c, roughness:0.4, metalness:0.85 });
 
     function circleOutline(radius, y, segs = 64) {
       const pts = [];
@@ -143,31 +133,76 @@
     const amb = new THREE.Group();
     scene.add(amb);
 
-    // 몸통
     const BR = 1.05, BH = 1.8;
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(BR, BR*0.96, BH, 64), matGreen);
-    body.castShadow = true; body.receiveShadow = true;
-    amb.add(body);
+
+    // ── 몸통: 뒷면(고정) + 우측 문 + 좌측 문 ────────────────────────
+    // Three.js CylinderGeometry: θ=0 → +Z(앞), θ=π/2 → +X(오른쪽), θ=π → -Z(뒤), θ=3π/2 → -X(왼쪽)
+    //
+    //  구성:
+    //  뒷면:  θ [π/2, 3π/2]  (오른쪽→뒤→왼쪽, 고정)
+    //  우문:  θ [0,   π/2]   (앞→오른쪽,  힌지 +X)
+    //  좌문:  θ [3π/2, 2π]   (왼쪽→앞,    힌지 -X)
+
+    const bodyBack = new THREE.Mesh(
+      new THREE.CylinderGeometry(BR, BR*0.96, BH, 32, 1, false, Math.PI/2, Math.PI),
+      matGreen
+    );
+    bodyBack.castShadow = true; bodyBack.receiveShadow = true;
+    amb.add(bodyBack);
+
+    // 우측 문: 힌지가 +X 방향 모서리에 위치
+    // 메쉬를 힌지 로컬에서 -X만큼 오프셋 → θ=π/2 엣지가 힌지 원점에 정렬
+    const doorRHinge = new THREE.Group();
+    doorRHinge.position.set(BR, 0, 0);
+    amb.add(doorRHinge);
+    const doorR = new THREE.Mesh(
+      new THREE.CylinderGeometry(BR, BR*0.96, BH, 32, 1, false, 0, Math.PI/2),
+      matGreen
+    );
+    doorR.position.x = -BR;
+    doorR.castShadow = true;
+    doorRHinge.add(doorR);
+
+    // 좌측 문: 힌지가 -X 방향 모서리에 위치
+    // 메쉬를 힌지 로컬에서 +X만큼 오프셋 → θ=3π/2 엣지가 힌지 원점에 정렬
+    const doorLHinge = new THREE.Group();
+    doorLHinge.position.set(-BR, 0, 0);
+    amb.add(doorLHinge);
+    const doorL = new THREE.Mesh(
+      new THREE.CylinderGeometry(BR, BR*0.96, BH, 32, 1, false, Math.PI*1.5, Math.PI/2),
+      matGreen
+    );
+    doorL.position.x = BR;
+    doorL.castShadow = true;
+    doorLHinge.add(doorL);
+
+    // 몸통 안쪽 발광면 (열렸을 때 보임, BackSide 렌더링)
+    const innerGlowMat = new THREE.MeshStandardMaterial({
+      color: 0xff3300, emissive: 0xff1100, emissiveIntensity: 0,
+      side: THREE.BackSide, roughness: 0.35
+    });
+    const innerGlowBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(BR*0.97, BR*0.97*0.96, BH, 32), innerGlowMat
+    );
+    amb.add(innerGlowBody);
+
     amb.add(circleOutline(BR, BH/2));
     amb.add(circleOutline(BR*0.96, -BH/2));
 
-    // 머리
+    // ── 머리 ─────────────────────────────────────────────────────────
     const headPivot = new THREE.Group();
-    headPivot.position.y = BH / 2;
-    amb.add(headPivot);
+    headPivot.position.y = BH/2; amb.add(headPivot);
     const innerDisc = new THREE.Mesh(new THREE.CircleGeometry(BR*0.99, 64), matMouth);
     innerDisc.rotation.x = -Math.PI/2; innerDisc.position.y = 0.001;
     headPivot.add(innerDisc);
-    const upperHalf = new THREE.Group();
-    headPivot.add(upperHalf);
+    const upperHalf = new THREE.Group(); headPivot.add(upperHalf);
     const dome = new THREE.Mesh(
       new THREE.SphereGeometry(BR, 48, 32, 0, Math.PI*2, 0, Math.PI*0.5), matGreen
     );
     dome.castShadow = true; upperHalf.add(dome);
     upperHalf.add(circleOutline(BR, 0));
     const domeCap = new THREE.Mesh(new THREE.CircleGeometry(BR*0.99, 48), matCap);
-    domeCap.rotation.x = Math.PI/2; domeCap.position.y = 0.001;
-    upperHalf.add(domeCap);
+    domeCap.rotation.x = Math.PI/2; domeCap.position.y = 0.001; upperHalf.add(domeCap);
     [[-0.30,0.45,0.85],[0.30,0.45,0.85]].forEach(([x,y,z]) => {
       const eye = new THREE.Mesh(new THREE.SphereGeometry(0.07,16,16), matBlack);
       eye.position.set(x,y,z); upperHalf.add(eye);
@@ -177,16 +212,14 @@
     const antBall = new THREE.Mesh(new THREE.SphereGeometry(0.075,16,16), matBlack);
     antBall.position.set(0, BR+0.58, 0); upperHalf.add(antBall);
 
-    // 팔
+    // ── 팔 ───────────────────────────────────────────────────────────
     function makeArm(side) {
       const g = new THREE.Group();
       g.position.set(side*(BR+0.12), 0.2, 0.15);
       const tipX = side*0.22;
       const curve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(0,0,0),
-        new THREE.Vector3(side*0.05,-0.28,0),
-        new THREE.Vector3(side*0.15,-0.65,-0.05),
-        new THREE.Vector3(tipX,-1.05,-0.08)
+        new THREE.Vector3(0,0,0), new THREE.Vector3(side*0.05,-0.28,0),
+        new THREE.Vector3(side*0.15,-0.65,-0.05), new THREE.Vector3(tipX,-1.05,-0.08)
       ]);
       const tube = new THREE.Mesh(new THREE.TubeGeometry(curve,24,0.075,12,false), matBlack);
       tube.castShadow = true; g.add(tube);
@@ -198,7 +231,7 @@
     const armR = makeArm(1), armL = makeArm(-1);
     amb.add(armR); amb.add(armL);
 
-    // 바퀴
+    // ── 바퀴 ─────────────────────────────────────────────────────────
     function makeWheel() {
       const g = new THREE.Group();
       const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,0.32,32), matTire);
@@ -213,89 +246,56 @@
         g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), matLine));
       }
       const marker = new THREE.Mesh(new THREE.SphereGeometry(0.06,12,12),
-        new THREE.MeshStandardMaterial({color:0x8FBA3A,roughness:0.6}));
+        new THREE.MeshStandardMaterial({color:0x8FBA3A, roughness:0.6}));
       marker.position.set(0,0.28,0); g.add(marker);
       return g;
     }
     const wheelL = makeWheel(), wheelR = makeWheel();
     const pivL = new THREE.Group(), pivR = new THREE.Group();
-    const WY = -BH/2 - 0.05; // -0.95 → 바퀴 바닥 -1.37 → FLOOR = 1.37
-    pivL.position.set(-BR, WY, 0); pivR.position.set(BR, WY, 0);
+    const WY = -BH/2 - 0.05; // -0.95 → 바퀴 바닥 -1.37 → FLOOR=1.37
+    pivL.position.set(-BR,WY,0); pivR.position.set(BR,WY,0);
     pivL.add(wheelL); pivR.add(wheelR);
     amb.add(pivL); amb.add(pivR);
     const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,1.7,12), matBlack);
     axle.rotation.z = Math.PI/2; axle.position.y = WY; amb.add(axle);
 
-    // ── 가슴 패널 (Shift → 열림 → 대포 → 미사일) ─────────────────────
-    // 힌지가 body 외측 모서리에 위치. 패널이 안쪽으로 뻗어 있다가 바깥으로 열림.
-    const chestY = 0.05; // 캐논/패널 높이 (body 중심 기준)
-
-    const chestLHinge = new THREE.Group();
-    chestLHinge.position.set(-BR, chestY, BR + 0.07);
-    amb.add(chestLHinge);
-    const chestLP = new THREE.Mesh(new THREE.BoxGeometry(BR, 1.32, 0.10), matPanel);
-    chestLP.position.set(BR/2, 0, 0); // 힌지 오른쪽으로 패널 뻗음
-    chestLP.castShadow = true;
-    chestLHinge.add(chestLP);
-
-    const chestRHinge = new THREE.Group();
-    chestRHinge.position.set(BR, chestY, BR + 0.07);
-    amb.add(chestRHinge);
-    const chestRP = new THREE.Mesh(new THREE.BoxGeometry(BR, 1.32, 0.10), matPanel);
-    chestRP.position.set(-BR/2, 0, 0); // 힌지 왼쪽으로 패널 뻗음
-    chestRP.castShadow = true;
-    chestRHinge.add(chestRP);
-
-    // 가슴 내부 코어 (열릴 때 빛남)
-    const matCore = new THREE.MeshBasicMaterial({ color:0xff5500, transparent:true, opacity:0 });
-    const innerCore = new THREE.Mesh(new THREE.CircleGeometry(0.38, 20), matCore);
-    innerCore.position.set(0, chestY, BR + 0.12);
-    amb.add(innerCore);
-
-    // 가슴 포인트 라이트
-    const chestLight = new THREE.PointLight(0xff6600, 0, 5);
-    chestLight.position.set(0, chestY, 0.6);
+    // ── 대포 시스템 ───────────────────────────────────────────────────
+    const chestLight = new THREE.PointLight(0xff6600, 0, 6);
+    chestLight.position.set(0, 0, 0.4);
     amb.add(chestLight);
 
-    // 대포 (열릴 때 앞으로 나옴)
+    // 대포 피벗: 수납 z=-0.9, 전개 z=0.2 (배럴 tip=pivot.z+1.4)
     const cannonPivot = new THREE.Group();
-    cannonPivot.position.set(0, chestY, -0.9); // 시작: 몸통 안에 수납
+    cannonPivot.position.set(0, 0, -0.9);
     amb.add(cannonPivot);
 
     const cannonBarrel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.075, 0.12, 1.4, 10), matCannon
+      new THREE.CylinderGeometry(0.075, 0.13, 1.4, 12), matCannon
     );
     cannonBarrel.rotation.x = Math.PI/2;
-    cannonBarrel.position.z = 0.7; // 배럴 중심 → tip at z=1.4 from pivot
+    cannonBarrel.position.z = 0.7;
     cannonBarrel.castShadow = true;
     cannonPivot.add(cannonBarrel);
 
-    // 포구 링
     const cannonRing = new THREE.Mesh(
-      new THREE.TorusGeometry(0.10, 0.035, 8, 16),
-      new THREE.MeshStandardMaterial({color:0x444444, roughness:0.3, metalness:0.9})
+      new THREE.TorusGeometry(0.10, 0.035, 8, 18),
+      new THREE.MeshStandardMaterial({color:0x555555, roughness:0.3, metalness:0.9})
     );
     cannonRing.position.z = 1.4;
     cannonPivot.add(cannonRing);
 
     // ── 게임 상태 ──────────────────────────────────────────────────────
-    const FLOOR    = 1.37;
-    const MOVE_SPD = 0.10;
-    const TURN_SPD = 0.045;
-    const JUMP_VEL = 0.22;
-    const GRAVITY  = -0.013;
-    const CAM_H    = 4.2;
+    const FLOOR = 1.37, MOVE_SPD = 0.10, TURN_SPD = 0.045;
+    const JUMP_VEL = 0.22, GRAVITY = -0.013, CAM_H = 4.2;
 
     let rot = 0, velY = 0, jumping = false, baseY = FLOOR;
     let walkT = 0, idleT = 0, danceT = 0, globalT = 0;
     let dancing = false, mouthOpen = 0, mouthTarget = 0;
 
-    // 가슴 상태
-    let chestPhase = 0; // 0=닫힘, 1=열리는중, 2=발사대기, 3=닫히는중
-    let chestT     = 0; // 0→1 애니메이션 진행도
-    let firePause  = 0;
-    const missiles = [];
-    const flashes  = [];
+    // 가슴·대포 상태
+    // Phase: 0=닫힘, 1=문열림, 2=대포전개+발사, 3=닫히는중
+    let chestPhase = 0, chestT = 0, cannonExt = 0, firePause = 0;
+    const missiles = [], flashes = [];
 
     // 카메라
     let camRot = 0, camOffset = 0, camDist = 8.5;
@@ -306,7 +306,7 @@
     // ── 유틸 ──────────────────────────────────────────────────────────
     function lerp(a, b, k) { return a + (b-a)*k; }
     function lerpAngle(a, b, k) {
-      let d = b - a;
+      let d = b-a;
       while (d >  Math.PI) d -= Math.PI*2;
       while (d < -Math.PI) d += Math.PI*2;
       return a + d*k;
@@ -318,14 +318,13 @@
     // ── 미사일 발사 ───────────────────────────────────────────────────
     function fireMissile() {
       const m = new THREE.Group();
-
-      // 포구 끝 위치 (amb 로컬: cannonPivot.z + 1.4)
-      const tipLocalZ = cannonPivot.position.z + 1.4;
-      const tipWorld  = new THREE.Vector3(0, chestY, tipLocalZ)
+      // 포구 끝: cannonPivot.z + 배럴길이
+      const tipZ = cannonPivot.position.z + 1.4;
+      const tipW  = new THREE.Vector3(0, 0, tipZ)
         .applyEuler(new THREE.Euler(0, rot, 0))
         .add(amb.position);
 
-      m.position.copy(tipWorld);
+      m.position.copy(tipW);
       m.rotation.y = rot;
 
       const mMat = new THREE.MeshStandardMaterial({
@@ -336,43 +335,33 @@
       mBody.rotation.x = Math.PI/2; m.add(mBody);
 
       const mNose = new THREE.Mesh(new THREE.ConeGeometry(0.075,0.24,8),
-        new THREE.MeshStandardMaterial({color:0xff8800,emissive:0xff5500,emissiveIntensity:0.5}));
+        new THREE.MeshStandardMaterial({color:0xff8800, emissive:0xff5500, emissiveIntensity:0.5}));
       mNose.rotation.x = Math.PI/2; mNose.position.z = 0.38; m.add(mNose);
 
       const exhaust = new THREE.Mesh(new THREE.ConeGeometry(0.055,0.30,8),
-        new THREE.MeshBasicMaterial({color:0xffbb33,transparent:true,opacity:0.8}));
+        new THREE.MeshBasicMaterial({color:0xffbb33, transparent:true, opacity:0.8}));
       exhaust.rotation.x = -Math.PI/2; exhaust.position.z = -0.38; m.add(exhaust);
 
       scene.add(m);
-      missiles.push({
-        mesh: m, exhaust,
-        vx: Math.sin(rot)*0.50, vy: 0.06, vz: Math.cos(rot)*0.50,
-        life: 85, maxLife: 85
-      });
+      missiles.push({ mesh:m, exhaust, vx:Math.sin(rot)*0.50, vy:0.06, vz:Math.cos(rot)*0.50, life:85, maxLife:85 });
 
       // 머즐 플래시
-      const fl = new THREE.Mesh(
-        new THREE.SphereGeometry(0.30, 8, 6),
-        new THREE.MeshBasicMaterial({color:0xffcc22,transparent:true,opacity:1.0})
-      );
-      fl.position.copy(tipWorld);
-      scene.add(fl);
-      flashes.push({ mesh: fl, life: 7 });
+      const fl = new THREE.Mesh(new THREE.SphereGeometry(0.30,8,6),
+        new THREE.MeshBasicMaterial({color:0xffcc22, transparent:true, opacity:1.0}));
+      fl.position.copy(tipW); scene.add(fl);
+      flashes.push({ mesh:fl, life:7 });
     }
 
     // ── 입력 ──────────────────────────────────────────────────────────
     const K = {};
     const camBadge = document.getElementById('cam-badge');
-
     window.addEventListener('keydown', e => {
-      const fresh = !K[e.code];
-      K[e.code] = true;
-      if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))
-        e.preventDefault();
+      const fresh = !K[e.code]; K[e.code] = true;
+      if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
       if (!fresh) return;
-      if (e.code === 'Digit1') { camOffset = Math.PI;     camBadge.textContent = '시점: 정면'; }
-      if (e.code === 'Digit2') { camOffset = 0;           camBadge.textContent = '시점: 후면'; }
-      if (e.code === 'Digit3') { camOffset = Math.PI/2;   camBadge.textContent = '시점: 측면'; }
+      if (e.code === 'Digit1') { camOffset = Math.PI;    camBadge.textContent = '시점: 정면'; }
+      if (e.code === 'Digit2') { camOffset = 0;          camBadge.textContent = '시점: 후면'; }
+      if (e.code === 'Digit3') { camOffset = Math.PI/2;  camBadge.textContent = '시점: 측면'; }
       if (e.code === 'KeyQ')   dancing = !dancing;
       if (e.code === 'KeyW')   mouthTarget = mouthTarget > 0.1 ? 0 : 0.5;
       if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && chestPhase === 0) chestPhase = 1;
@@ -380,8 +369,8 @@
     window.addEventListener('keyup', e => { K[e.code] = false; });
     window.addEventListener('wheel', e => {
       e.preventDefault();
-      camDist = Math.max(3, Math.min(22, camDist + e.deltaY * 0.015));
-    }, { passive: false });
+      camDist = Math.max(3, Math.min(22, camDist + e.deltaY*0.015));
+    }, { passive:false });
 
     // ── 메인 루프 ─────────────────────────────────────────────────────
     function tick() {
@@ -404,45 +393,47 @@
         if (baseY <= FLOOR) { baseY = FLOOR; velY = 0; jumping = false; }
       } else { baseY = FLOOR; }
 
-      // ── 가슴/대포 상태머신 ────────────────────────────────────────
+      // ── 가슴·대포 상태머신 ────────────────────────────────────────
       if (chestPhase === 1) {
+        // 문이 열림
         chestT = Math.min(1, chestT + 0.055);
-        if (chestT >= 1) { chestPhase = 2; firePause = 10; }
+        if (chestT >= 1) { chestPhase = 2; firePause = 8; cannonExt = 0; }
       } else if (chestPhase === 2) {
-        if (--firePause <= 0) { fireMissile(); chestPhase = 3; }
+        // 대포 전개 후 발사
+        cannonExt = Math.min(1, cannonExt + 0.18);
+        if (--firePause <= 0 && cannonExt >= 0.9) { fireMissile(); chestPhase = 3; }
       } else if (chestPhase === 3) {
-        chestT = Math.max(0, chestT - 0.055);
+        // 대포 수납 + 문 닫힘
+        cannonExt = Math.max(0, cannonExt - 0.12);
+        chestT    = Math.max(0, chestT    - 0.055);
         if (chestT <= 0) chestPhase = 0;
       }
 
-      // 패널 회전 (힌지 기준: L은 +Y회전으로 왼쪽 바깥으로 열림, R은 반대)
-      const openAngle = chestT * Math.PI * 0.60;
-      chestLHinge.rotation.y =  openAngle;
-      chestRHinge.rotation.y = -openAngle;
-      // 대포 전진 (수납위치 z=-0.9 → 전개위치 z=0.2)
-      cannonPivot.position.z = lerp(-0.9, 0.2, chestT);
-      // 코어 빛 & 라이트
-      matCore.opacity         = chestT * 0.95;
-      chestLight.intensity    = chestT * 3.0;
+      // 문 회전 (우문 +Y, 좌문 -Y) — 최대 약 100°
+      const openAngle = chestT * Math.PI * 0.56;
+      doorRHinge.rotation.y =  openAngle;
+      doorLHinge.rotation.y = -openAngle;
+      // 대포 전개
+      cannonPivot.position.z = lerp(-0.9, 0.2, cannonExt);
+      // 내부 발광
+      innerGlowMat.emissiveIntensity = (chestT * 0.7 + cannonExt * 0.3) * 2.5;
+      chestLight.intensity           = (chestT * 0.6 + cannonExt * 0.4) * 4.0;
 
-      // ── 미사일 업데이트 ───────────────────────────────────────────
-      for (let i = missiles.length - 1; i >= 0; i--) {
+      // ── 미사일 & 플래시 업데이트 ──────────────────────────────────
+      for (let i = missiles.length-1; i >= 0; i--) {
         const m = missiles[i];
         m.mesh.position.x += m.vx;
         m.mesh.position.y += m.vy;
         m.mesh.position.z += m.vz;
-        m.vy -= 0.003; // 약한 중력
+        m.vy -= 0.003;
         m.life--;
         m.exhaust.material.opacity = 0.8 * (m.life / m.maxLife);
         if (m.life <= 0) { scene.remove(m.mesh); missiles.splice(i, 1); }
       }
-
-      // ── 플래시 업데이트 ───────────────────────────────────────────
-      for (let i = flashes.length - 1; i >= 0; i--) {
-        const f = flashes[i];
-        f.life--;
+      for (let i = flashes.length-1; i >= 0; i--) {
+        const f = flashes[i]; f.life--;
         f.mesh.material.opacity = f.life / 7;
-        f.mesh.scale.setScalar(1 + (7 - f.life) * 0.35);
+        f.mesh.scale.setScalar(1 + (7-f.life)*0.35);
         if (f.life <= 0) { scene.remove(f.mesh); flashes.splice(i, 1); }
       }
 
@@ -461,88 +452,67 @@
         armR.rotation.x = lerp(armR.rotation.x, 0, 0.12);
         armL.rotation.x = lerp(armL.rotation.x, 0, 0.12);
         leanX = velY > 0 ? -0.07 : 0.06;
-        pivL.position.x = lerp(pivL.position.x, -BR, 0.15);
-        pivR.position.x = lerp(pivR.position.x,  BR, 0.15);
-        pivL.position.y = lerp(pivL.position.y,  WY, 0.15);
-        pivR.position.y = lerp(pivR.position.y,  WY, 0.15);
-        wheelL.rotation.z = lerp(wheelL.rotation.z, 0, 0.15);
-        wheelR.rotation.z = lerp(wheelR.rotation.z, 0, 0.15);
-        amb.rotation.z       = lerp(amb.rotation.z,       0, 0.10);
-        headPivot.rotation.z = lerp(headPivot.rotation.z, 0, 0.10);
-        headPivot.rotation.x = lerp(headPivot.rotation.x, 0, 0.10);
+        pivL.position.x = lerp(pivL.position.x,-BR,0.15); pivR.position.x = lerp(pivR.position.x,BR,0.15);
+        pivL.position.y = lerp(pivL.position.y,WY,0.15);  pivR.position.y = lerp(pivR.position.y,WY,0.15);
+        wheelL.rotation.z = lerp(wheelL.rotation.z,0,0.15); wheelR.rotation.z = lerp(wheelR.rotation.z,0,0.15);
+        amb.rotation.z = lerp(amb.rotation.z,0,0.10); headPivot.rotation.z = lerp(headPivot.rotation.z,0,0.10);
+        headPivot.rotation.x = lerp(headPivot.rotation.x,0,0.10);
 
       } else if (dancing) {
         danceT += 0.05;
         bobY = Math.abs(Math.sin(danceT*3)) * 0.22;
-        amb.rotation.z       =  Math.sin(danceT*1.5) * 0.12;
-        headPivot.rotation.z = -Math.sin(danceT*1.5) * 0.08;
-        headPivot.rotation.x =  Math.sin(danceT*2.2) * 0.05;
-        const swing = Math.sin(danceT*3) * 0.30;
-        setLift(armR,  1, 0.72 + swing);
-        setLift(armL, -1, 0.72 - swing);
-        armR.rotation.x =  Math.sin(danceT*3) * 0.20;
-        armL.rotation.x = -Math.sin(danceT*3) * 0.20;
+        amb.rotation.z = Math.sin(danceT*1.5)*0.12;
+        headPivot.rotation.z = -Math.sin(danceT*1.5)*0.08;
+        headPivot.rotation.x =  Math.sin(danceT*2.2)*0.05;
+        const swing = Math.sin(danceT*3)*0.30;
+        setLift(armR, 1, 0.72+swing); setLift(armL,-1, 0.72-swing);
+        armR.rotation.x =  Math.sin(danceT*3)*0.20; armL.rotation.x = -Math.sin(danceT*3)*0.20;
         wheelL.rotation.x += 0.40; wheelR.rotation.x -= 0.40;
-        const wHL = Math.max(0, Math.sin(danceT*3))           * 0.38;
-        const wHR = Math.max(0, Math.sin(danceT*3+Math.PI))   * 0.38;
-        pivL.position.y = WY + wHL; pivR.position.y = WY + wHR;
-        pivL.position.x = -BR - wHL*0.9; pivR.position.x = BR + wHR*0.9;
-        wheelL.rotation.z =  wHL*0.7; wheelR.rotation.z = -wHR*0.7;
+        const wHL = Math.max(0,Math.sin(danceT*3))*0.38;
+        const wHR = Math.max(0,Math.sin(danceT*3+Math.PI))*0.38;
+        pivL.position.y = WY+wHL; pivR.position.y = WY+wHR;
+        pivL.position.x = -BR-wHL*0.9; pivR.position.x = BR+wHR*0.9;
+        wheelL.rotation.z = wHL*0.7; wheelR.rotation.z = -wHR*0.7;
 
       } else if (moving) {
         walkT += 0.22;
-        bobY  = Math.abs(Math.sin(walkT)) * 0.055;
-        leanX = fwd * 0.07;
+        bobY = Math.abs(Math.sin(walkT))*0.055; leanX = fwd*0.07;
         wheelL.rotation.x += 0.18*fwd; wheelR.rotation.x += 0.18*fwd;
-        armR.rotation.x = lerp(armR.rotation.x,  Math.sin(walkT)*0.25, 0.3);
-        armL.rotation.x = lerp(armL.rotation.x, -Math.sin(walkT)*0.25, 0.3);
-        armR.rotation.z = lerp(armR.rotation.z, 0, 0.10);
-        armL.rotation.z = lerp(armL.rotation.z, 0, 0.10);
-        pivL.position.x = lerp(pivL.position.x, -BR, 0.2);
-        pivR.position.x = lerp(pivR.position.x,  BR, 0.2);
-        pivL.position.y = lerp(pivL.position.y,  WY, 0.2);
-        pivR.position.y = lerp(pivR.position.y,  WY, 0.2);
-        wheelL.rotation.z = lerp(wheelL.rotation.z, 0, 0.2);
-        wheelR.rotation.z = lerp(wheelR.rotation.z, 0, 0.2);
-        amb.rotation.z       = lerp(amb.rotation.z,       0, 0.10);
-        headPivot.rotation.z = lerp(headPivot.rotation.z, 0, 0.10);
-        headPivot.rotation.x = lerp(headPivot.rotation.x, 0, 0.10);
+        armR.rotation.x = lerp(armR.rotation.x, Math.sin(walkT)*0.25, 0.3);
+        armL.rotation.x = lerp(armL.rotation.x,-Math.sin(walkT)*0.25, 0.3);
+        armR.rotation.z = lerp(armR.rotation.z,0,0.10); armL.rotation.z = lerp(armL.rotation.z,0,0.10);
+        pivL.position.x = lerp(pivL.position.x,-BR,0.2); pivR.position.x = lerp(pivR.position.x,BR,0.2);
+        pivL.position.y = lerp(pivL.position.y,WY,0.2);  pivR.position.y = lerp(pivR.position.y,WY,0.2);
+        wheelL.rotation.z = lerp(wheelL.rotation.z,0,0.2); wheelR.rotation.z = lerp(wheelR.rotation.z,0,0.2);
+        amb.rotation.z = lerp(amb.rotation.z,0,0.10); headPivot.rotation.z = lerp(headPivot.rotation.z,0,0.10);
+        headPivot.rotation.x = lerp(headPivot.rotation.x,0,0.10);
 
       } else {
         idleT += 0.016;
-        bobY  = Math.sin(idleT*1.5) * 0.04;
-        armR.rotation.x = lerp(armR.rotation.x, 0, 0.10);
-        armL.rotation.x = lerp(armL.rotation.x, 0, 0.10);
-        armR.rotation.z = lerp(armR.rotation.z, 0, 0.10);
-        armL.rotation.z = lerp(armL.rotation.z, 0, 0.10);
-        pivL.position.x = lerp(pivL.position.x, -BR, 0.12);
-        pivR.position.x = lerp(pivR.position.x,  BR, 0.12);
-        pivL.position.y = lerp(pivL.position.y,  WY, 0.12);
-        pivR.position.y = lerp(pivR.position.y,  WY, 0.12);
-        wheelL.rotation.z = lerp(wheelL.rotation.z, 0, 0.12);
-        wheelR.rotation.z = lerp(wheelR.rotation.z, 0, 0.12);
-        amb.rotation.z       = lerp(amb.rotation.z,       0, 0.10);
-        headPivot.rotation.z = lerp(headPivot.rotation.z, 0, 0.10);
-        headPivot.rotation.x = lerp(headPivot.rotation.x, 0, 0.10);
+        bobY = Math.sin(idleT*1.5)*0.04;
+        armR.rotation.x = lerp(armR.rotation.x,0,0.10); armL.rotation.x = lerp(armL.rotation.x,0,0.10);
+        armR.rotation.z = lerp(armR.rotation.z,0,0.10); armL.rotation.z = lerp(armL.rotation.z,0,0.10);
+        pivL.position.x = lerp(pivL.position.x,-BR,0.12); pivR.position.x = lerp(pivR.position.x,BR,0.12);
+        pivL.position.y = lerp(pivL.position.y,WY,0.12);  pivR.position.y = lerp(pivR.position.y,WY,0.12);
+        wheelL.rotation.z = lerp(wheelL.rotation.z,0,0.12); wheelR.rotation.z = lerp(wheelR.rotation.z,0,0.12);
+        amb.rotation.z = lerp(amb.rotation.z,0,0.10); headPivot.rotation.z = lerp(headPivot.rotation.z,0,0.10);
+        headPivot.rotation.x = lerp(headPivot.rotation.x,0,0.10);
       }
 
       if (!moving && !dancing && turn !== 0) {
-        wheelL.rotation.x += turn * -0.10;
-        wheelR.rotation.x += turn *  0.10;
+        wheelL.rotation.x += turn*-0.10; wheelR.rotation.x += turn*0.10;
       }
 
       amb.position.y = baseY + bobY;
       amb.rotation.x = lerp(amb.rotation.x, leanX, 0.12);
-      antenna.rotation.z = Math.sin(globalT*2.2) * 0.08;
-      antBall.position.x = Math.sin(globalT*2.2) * 0.05;
+      antenna.rotation.z = Math.sin(globalT*2.2)*0.08;
+      antBall.position.x = Math.sin(globalT*2.2)*0.05;
 
       // ── 그림자 블롭 ──────────────────────────────────────────────
-      shadowBlob.position.x = amb.position.x;
-      shadowBlob.position.z = amb.position.z;
+      shadowBlob.position.x = amb.position.x; shadowBlob.position.z = amb.position.z;
       const ht = Math.max(0, amb.position.y - FLOOR);
       const ss = Math.max(0.3, 1 - ht*0.18);
-      shadowBlob.scale.setScalar(ss);
-      shadowBlob.material.opacity = 0.18 * ss;
+      shadowBlob.scale.setScalar(ss); shadowBlob.material.opacity = 0.18*ss;
 
       // ── 카메라 ───────────────────────────────────────────────────
       camRot = lerpAngle(camRot, rot + camOffset, 0.08);
