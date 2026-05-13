@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>amb — 웹 게임</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; }
+    #hud {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13px;
+      color: #444;
+      background: rgba(255,255,255,0.72);
+      padding: 8px 18px;
+      border-radius: 20px;
+      backdrop-filter: blur(6px);
+      user-select: none;
+      white-space: nowrap;
+    }
+    #cam-badge {
+      position: fixed;
+      top: 14px;
+      right: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 12px;
+      color: #555;
+      background: rgba(255,255,255,0.72);
+      padding: 5px 12px;
+      border-radius: 12px;
+      backdrop-filter: blur(6px);
+      user-select: none;
+      transition: opacity 0.3s;
+    }
+  </style>
+</head>
+<body>
+  <div id="hud">↑↓←→ 이동 &nbsp;·&nbsp; Space 점프 &nbsp;·&nbsp; Q 춤 &nbsp;·&nbsp; W 입 &nbsp;·&nbsp; 1 정면 &nbsp;·&nbsp; 2 후면 &nbsp;·&nbsp; 3 측면 &nbsp;·&nbsp; 스크롤 줌</div>
+  <div id="cam-badge">시점: 후면</div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+  (function () {
+
+    // ── Renderer ──────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    // ── Scene ─────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87CEEB);
+    scene.fog = new THREE.Fog(0x87CEEB, 45, 95);
+
+    // ── Camera ────────────────────────────────────────────────────────
+    const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 200);
+
+    // ── Lights ────────────────────────────────────────────────────────
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+
+    const sun = new THREE.DirectionalLight(0xfffaef, 0.95);
+    sun.position.set(10, 18, 8);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.left   = -22;
+    sun.shadow.camera.right  =  22;
+    sun.shadow.camera.top    =  22;
+    sun.shadow.camera.bottom = -22;
+    sun.shadow.camera.far    =  60;
+    scene.add(sun);
+    scene.add(sun.target);
+
+    // ── Ground ────────────────────────────────────────────────────────
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(130, 130),
+      new THREE.MeshStandardMaterial({ color: 0x79C440, roughness: 0.95 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const grid = new THREE.GridHelper(130, 52, 0x5fa832, 0x5fa832);
+    grid.material.opacity = 0.22;
+    grid.material.transparent = true;
+    scene.add(grid);
+
+    // ── Decorations ───────────────────────────────────────────────────
+    const mTrunk = new THREE.MeshStandardMaterial({ color: 0x7a4f2e, roughness: 0.9 });
+    const mLeaf  = new THREE.MeshStandardMaterial({ color: 0x3d7a2e, roughness: 0.85 });
+    const mRock  = new THREE.MeshStandardMaterial({ color: 0x888880, roughness: 0.95 });
+
+    function addTree(x, z) {
+      const g = new THREE.Group();
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 1.8, 7), mTrunk);
+      trunk.position.y = 0.9; trunk.castShadow = true; g.add(trunk);
+      const leaves = new THREE.Mesh(new THREE.ConeGeometry(1.4, 3.0, 7), mLeaf);
+      leaves.position.y = 3.3; leaves.castShadow = true; g.add(leaves);
+      g.position.set(x, 0, z);
+      scene.add(g);
+    }
+
+    function addRock(x, z, r) {
+      const rock = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 5), mRock);
+      rock.scale.y = 0.65;
+      rock.position.set(x, r * 0.65, z);
+      rock.castShadow = true; rock.receiveShadow = true;
+      scene.add(rock);
+    }
+
+    [
+      [6,6], [-5,9], [12,-4], [-10,-6], [4,-13],
+      [18,2], [-15,8], [7,14], [-7,-17], [14,-11],
+      [-18,-4], [20,-8], [9,-18], [-12,16], [16,12],
+      [-20,15], [22,5], [-8,20], [10,-22], [-22,-12]
+    ].forEach(([x,z]) => addTree(x, z));
+
+    [
+      [8,3,0.4], [-4,6,0.55], [5,-9,0.35],
+      [-11,3,0.5], [13,-5,0.3], [3,10,0.45]
+    ].forEach(([x,z,r]) => addRock(x, z, r));
+
+    // ── Shadow blob ───────────────────────────────────────────────────
+    const shadowBlob = new THREE.Mesh(
+      new THREE.CircleGeometry(1.0, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0x000000, transparent: true, opacity: 0.18, depthWrite: false
+      })
+    );
+    shadowBlob.rotation.x = -Math.PI / 2;
+    shadowBlob.position.y = 0.02;
+    scene.add(shadowBlob);
+
+    // ── amb 캐릭터 ────────────────────────────────────────────────────
+    const matGreen = new THREE.MeshStandardMaterial({ color: 0x8FBA3A, roughness: 0.7, metalness: 0.05 });
+    const matBlack = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.7, metalness: 0.1 });
+    const matTire  = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.95 });
+    const matMouth = new THREE.MeshStandardMaterial({ color: 0x2a4d1c, roughness: 0.9, side: THREE.DoubleSide });
+    const matCap   = new THREE.MeshStandardMaterial({ color: 0x6A9628, roughness: 0.7 });
+    const matLine  = new THREE.LineBasicMaterial({ color: 0x000000 });
+
+    function circleOutline(radius, y, segs = 64) {
+      const pts = [];
+      for (let i = 0; i <= segs; i++) {
+        const a = (i / segs) * Math.PI * 2;
+        pts.push(new THREE.Vector3(Math.cos(a) * radius, y, Math.sin(a) * radius));
+      }
+      return new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), matLine);
+    }
+
+    const amb = new THREE.Group();
+    scene.add(amb);
+
+    // 몸통
+    const BR = 1.05, BH = 1.8;
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(BR, BR * 0.96, BH, 64), matGreen);
+    body.castShadow = true; body.receiveShadow = true;
+    amb.add(body);
+    amb.add(circleOutline(BR, BH / 2));
+    amb.add(circleOutline(BR * 0.96, -BH / 2));
+
+    // 머리
+    const headPivot = new THREE.Group();
+    headPivot.position.y = BH / 2;
+    amb.add(headPivot);
+
+    const innerDisc = new THREE.Mesh(new THREE.CircleGeometry(BR * 0.99, 64), matMouth);
+    innerDisc.rotation.x = -Math.PI / 2;
+    innerDisc.position.y = 0.001;
+    headPivot.add(innerDisc);
+
+    const upperHalf = new THREE.Group();
+    headPivot.add(upperHalf);
+
+    const dome = new THREE.Mesh(
+      new THREE.SphereGeometry(BR, 48, 32, 0, Math.PI * 2, 0, Math.PI * 0.5),
+      matGreen
+    );
+    dome.castShadow = true;
+    upperHalf.add(dome);
+    upperHalf.add(circleOutline(BR, 0));
+
+    const domeCap = new THREE.Mesh(new THREE.CircleGeometry(BR * 0.99, 48), matCap);
+    domeCap.rotation.x = Math.PI / 2;
+    domeCap.position.y = 0.001;
+    upperHalf.add(domeCap);
+
+    // 눈
+    [[-0.30, 0.45, 0.85], [0.30, 0.45, 0.85]].forEach(([x, y, z]) => {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.07, 16, 16), matBlack);
+      eye.position.set(x, y, z);
+      upperHalf.add(eye);
+    });
+
+    // 안테나
+    const antenna = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.025, 0.025, 0.55, 12), matBlack
+    );
+    antenna.position.set(0, BR + 0.27, 0);
+    upperHalf.add(antenna);
+    const antBall = new THREE.Mesh(new THREE.SphereGeometry(0.075, 16, 16), matBlack);
+    antBall.position.set(0, BR + 0.58, 0);
+    upperHalf.add(antBall);
+
+    // 팔
+    function makeArm(side) {
+      const g = new THREE.Group();
+      g.position.set(side * (BR + 0.12), 0.2, 0.15);
+      const tipX = side * 0.22;
+      const curve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(side * 0.05, -0.28, 0.0),
+        new THREE.Vector3(side * 0.15, -0.65, -0.05),
+        new THREE.Vector3(tipX, -1.05, -0.08)
+      ]);
+      const tube = new THREE.Mesh(
+        new THREE.TubeGeometry(curve, 24, 0.075, 12, false), matBlack
+      );
+      tube.castShadow = true;
+      g.add(tube);
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 20), matBlack);
+      hand.position.set(tipX, -1.05, -0.08); hand.castShadow = true;
+      g.add(hand);
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 16), matBlack));
+      return g;
+    }
+    const armR = makeArm(1);
+    const armL = makeArm(-1);
+    amb.add(armR);
+    amb.add(armL);
+
+    // 바퀴
+    function makeWheel() {
+      const g = new THREE.Group();
+      const tire = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.42, 0.42, 0.32, 32), matTire
+      );
+      tire.rotation.z = Math.PI / 2;
+      tire.castShadow = true;
+      g.add(tire);
+      const r = 0.42;
+      for (const off of [-0.16, 0.16]) {
+        const pts = [];
+        for (let i = 0; i <= 48; i++) {
+          const a = (i / 48) * Math.PI * 2;
+          pts.push(new THREE.Vector3(off, Math.cos(a) * r, Math.sin(a) * r));
+        }
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), matLine));
+      }
+      const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.06, 12, 12),
+        new THREE.MeshStandardMaterial({ color: 0x8FBA3A, roughness: 0.6 })
+      );
+      marker.position.set(0, 0.28, 0);
+      g.add(marker);
+      return g;
+    }
+
+    const wheelL = makeWheel(), wheelR = makeWheel();
+    const pivL = new THREE.Group(), pivR = new THREE.Group();
+    // 바퀴 pivot Y = -0.95, 반지름 0.42 → 바퀴 바닥 = -1.37
+    // amb.position.y = 1.37 일 때 바퀴가 지면(y=0)에 닿음
+    const WY = -BH / 2 - 0.05;
+    pivL.position.set(-BR, WY, 0);
+    pivR.position.set( BR, WY, 0);
+    pivL.add(wheelL); pivR.add(wheelR);
+    amb.add(pivL); amb.add(pivR);
+
+    const axle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.05, 1.7, 12), matBlack
+    );
+    axle.rotation.z = Math.PI / 2;
+    axle.position.y = WY;
+    amb.add(axle);
+
+    // ── 게임 상태 ──────────────────────────────────────────────────────
+    const FLOOR    = 1.37;
+    const MOVE_SPD = 0.10;
+    const TURN_SPD = 0.045;
+    const JUMP_VEL = 0.22;
+    const GRAVITY  = -0.013;
+    const CAM_H    = 4.2;
+
+    let rot     = 0;
+    let velY    = 0;
+    let jumping = false;
+    let baseY   = FLOOR;
+    let walkT   = 0, idleT = 0, danceT = 0, globalT = 0;
+
+    let dancing     = false;
+    let mouthOpen   = 0;
+    let mouthTarget = 0;
+
+    // 카메라
+    let camRot    = 0;
+    let camOffset = 0;    // 0 = 후면, π = 정면, π/2 = 측면
+    let camDist   = 8.5;
+
+    amb.position.y = FLOOR;
+    camera.position.set(0, FLOOR + CAM_H, -8.5);
+
+    // ── 팔 들기 헬퍼 ──────────────────────────────────────────────────
+    function setLift(arm, side, lift) {
+      arm.rotation.z = (side > 0 ? 1 : -1) * Math.max(0, Math.min(1.15, lift));
+    }
+
+    // ── 유틸 ──────────────────────────────────────────────────────────
+    function lerp(a, b, k) { return a + (b - a) * k; }
+    function lerpAngle(a, b, k) {
+      let d = b - a;
+      while (d >  Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      return a + d * k;
+    }
+
+    // ── 입력 ──────────────────────────────────────────────────────────
+    const K = {};
+    const camBadge = document.getElementById('cam-badge');
+
+    window.addEventListener('keydown', e => {
+      const fresh = !K[e.code]; // 이번 프레임에 처음 눌린 키
+      K[e.code] = true;
+
+      if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))
+        e.preventDefault();
+
+      if (!fresh) return;
+
+      if (e.code === 'Digit1') { camOffset = Math.PI;       camBadge.textContent = '시점: 정면'; }
+      if (e.code === 'Digit2') { camOffset = 0;             camBadge.textContent = '시점: 후면'; }
+      if (e.code === 'Digit3') { camOffset = Math.PI / 2;   camBadge.textContent = '시점: 측면'; }
+      if (e.code === 'KeyQ')   { dancing = !dancing; danceT = dancing ? danceT : 0; }
+      if (e.code === 'KeyW')   { mouthTarget = mouthTarget > 0.1 ? 0 : 0.5; }
+    });
+    window.addEventListener('keyup', e => { K[e.code] = false; });
+
+    // 스크롤 줌
+    window.addEventListener('wheel', e => {
+      e.preventDefault();
+      camDist = Math.max(3, Math.min(22, camDist + e.deltaY * 0.015));
+    }, { passive: false });
+
+    // ── 메인 루프 ─────────────────────────────────────────────────────
+    function tick() {
+      requestAnimationFrame(tick);
+      globalT += 0.016;
+
+      const fwd    = K['ArrowUp'] ? 1 : K['ArrowDown'] ? -1 : 0;
+      const turn   = K['ArrowLeft'] ? 1 : K['ArrowRight'] ? -1 : 0;
+      const moving = fwd !== 0;
+
+      // 회전 & 이동
+      rot += turn * TURN_SPD;
+      amb.rotation.y = rot;
+      if (moving) {
+        amb.position.x += Math.sin(rot) * MOVE_SPD * fwd;
+        amb.position.z += Math.cos(rot) * MOVE_SPD * fwd;
+      }
+
+      // 점프
+      if (K['Space'] && !jumping) {
+        velY    = JUMP_VEL;
+        jumping = true;
+      }
+
+      // 중력
+      if (jumping) {
+        velY  += GRAVITY;
+        baseY += velY;
+        if (baseY <= FLOOR) { baseY = FLOOR; velY = 0; jumping = false; }
+      } else {
+        baseY = FLOOR;
+      }
+
+      // ── 입 애니메이션 (항상 실행) ──────────────────────────────────
+      mouthOpen += (mouthTarget - mouthOpen) * 0.12;
+      upperHalf.position.y = mouthOpen * 0.25;
+      upperHalf.rotation.x = -mouthOpen * 0.7;
+
+      // ── 캐릭터 애니메이션 ─────────────────────────────────────────
+      let bobY  = 0;
+      let leanX = 0;
+
+      if (jumping) {
+        // ── 점프: 팔 옆으로 들기 ──────────────────────────────────
+        const tz = velY > 0 ? 0.55 : 0.35;
+        armR.rotation.z = lerp(armR.rotation.z,  tz, 0.12);
+        armL.rotation.z = lerp(armL.rotation.z, -tz, 0.12);
+        armR.rotation.x = lerp(armR.rotation.x,   0, 0.12);
+        armL.rotation.x = lerp(armL.rotation.x,   0, 0.12);
+        leanX = velY > 0 ? -0.07 : 0.06;
+
+        // 바퀴 피벗 중립 복귀
+        pivL.position.x = lerp(pivL.position.x, -BR, 0.15);
+        pivR.position.x = lerp(pivR.position.x,  BR, 0.15);
+        pivL.position.y = lerp(pivL.position.y,  WY, 0.15);
+        pivR.position.y = lerp(pivR.position.y,  WY, 0.15);
+        wheelL.rotation.z = lerp(wheelL.rotation.z, 0, 0.15);
+        wheelR.rotation.z = lerp(wheelR.rotation.z, 0, 0.15);
+        amb.rotation.z      = lerp(amb.rotation.z,      0, 0.10);
+        headPivot.rotation.z = lerp(headPivot.rotation.z, 0, 0.10);
+        headPivot.rotation.x = lerp(headPivot.rotation.x, 0, 0.10);
+
+      } else if (dancing) {
+        // ── 춤 ────────────────────────────────────────────────────
+        danceT += 0.05;
+
+        bobY = Math.abs(Math.sin(danceT * 3)) * 0.22;
+
+        amb.rotation.z       = Math.sin(danceT * 1.5) * 0.12;
+        headPivot.rotation.z = -Math.sin(danceT * 1.5) * 0.08;
+        headPivot.rotation.x =  Math.sin(danceT * 2.2) * 0.05;
+
+        // 팔 교대로 들기
+        const swing = Math.sin(danceT * 3) * 0.30;
+        setLift(armR,  1, 0.72 + swing);
+        setLift(armL, -1, 0.72 - swing);
+        armR.rotation.x =  Math.sin(danceT * 3) * 0.20;
+        armL.rotation.x = -Math.sin(danceT * 3) * 0.20;
+
+        // 바퀴 킥
+        wheelL.rotation.x += 0.40;
+        wheelR.rotation.x -= 0.40;
+        const wHL = Math.max(0, Math.sin(danceT * 3))             * 0.38;
+        const wHR = Math.max(0, Math.sin(danceT * 3 + Math.PI))   * 0.38;
+        pivL.position.y = WY + wHL;
+        pivR.position.y = WY + wHR;
+        pivL.position.x = -BR - wHL * 0.9;
+        pivR.position.x =  BR + wHR * 0.9;
+        wheelL.rotation.z =  wHL * 0.7;
+        wheelR.rotation.z = -wHR * 0.7;
+
+      } else if (moving) {
+        // ── 이동: 바퀴 회전 + 진동 + 팔 흔들기 ──────────────────
+        walkT += 0.22;
+        bobY   = Math.abs(Math.sin(walkT)) * 0.055;
+        leanX  = fwd * 0.07;
+
+        wheelL.rotation.x += 0.18 * fwd;
+        wheelR.rotation.x += 0.18 * fwd;
+
+        armR.rotation.x = lerp(armR.rotation.x,  Math.sin(walkT) * 0.25, 0.3);
+        armL.rotation.x = lerp(armL.rotation.x, -Math.sin(walkT) * 0.25, 0.3);
+        armR.rotation.z = lerp(armR.rotation.z, 0, 0.10);
+        armL.rotation.z = lerp(armL.rotation.z, 0, 0.10);
+
+        // 댄스 잔여 상태 복귀
+        pivL.position.x  = lerp(pivL.position.x,  -BR, 0.2);
+        pivR.position.x  = lerp(pivR.position.x,   BR, 0.2);
+        pivL.position.y  = lerp(pivL.position.y,   WY, 0.2);
+        pivR.position.y  = lerp(pivR.position.y,   WY, 0.2);
+        wheelL.rotation.z = lerp(wheelL.rotation.z, 0, 0.2);
+        wheelR.rotation.z = lerp(wheelR.rotation.z, 0, 0.2);
+        amb.rotation.z       = lerp(amb.rotation.z,       0, 0.10);
+        headPivot.rotation.z = lerp(headPivot.rotation.z, 0, 0.10);
+        headPivot.rotation.x = lerp(headPivot.rotation.x, 0, 0.10);
+
+      } else {
+        // ── 정지 idle ─────────────────────────────────────────────
+        idleT += 0.016;
+        bobY   = Math.sin(idleT * 1.5) * 0.04;
+
+        armR.rotation.x = lerp(armR.rotation.x, 0, 0.10);
+        armL.rotation.x = lerp(armL.rotation.x, 0, 0.10);
+        armR.rotation.z = lerp(armR.rotation.z, 0, 0.10);
+        armL.rotation.z = lerp(armL.rotation.z, 0, 0.10);
+
+        pivL.position.x  = lerp(pivL.position.x,  -BR, 0.12);
+        pivR.position.x  = lerp(pivR.position.x,   BR, 0.12);
+        pivL.position.y  = lerp(pivL.position.y,   WY, 0.12);
+        pivR.position.y  = lerp(pivR.position.y,   WY, 0.12);
+        wheelL.rotation.z = lerp(wheelL.rotation.z, 0, 0.12);
+        wheelR.rotation.z = lerp(wheelR.rotation.z, 0, 0.12);
+        amb.rotation.z       = lerp(amb.rotation.z,       0, 0.10);
+        headPivot.rotation.z = lerp(headPivot.rotation.z, 0, 0.10);
+        headPivot.rotation.x = lerp(headPivot.rotation.x, 0, 0.10);
+      }
+
+      // 제자리 회전 시 바퀴 차동 스핀
+      if (!moving && !dancing && turn !== 0) {
+        wheelL.rotation.x += turn * -0.10;
+        wheelR.rotation.x += turn *  0.10;
+      }
+
+      amb.position.y = baseY + bobY;
+      amb.rotation.x = lerp(amb.rotation.x, leanX, 0.12);
+
+      // 안테나 흔들기
+      antenna.rotation.z = Math.sin(globalT * 2.2) * 0.08;
+      antBall.position.x = Math.sin(globalT * 2.2) * 0.05;
+
+      // ── 그림자 블롭 ──────────────────────────────────────────────
+      shadowBlob.position.x = amb.position.x;
+      shadowBlob.position.z = amb.position.z;
+      const ht = Math.max(0, amb.position.y - FLOOR);
+      const ss = Math.max(0.3, 1 - ht * 0.18);
+      shadowBlob.scale.setScalar(ss);
+      shadowBlob.material.opacity = 0.18 * ss;
+
+      // ── 카메라 팔로우 ─────────────────────────────────────────────
+      // camOffset: 0=후면, π=정면, π/2=측면 (캐릭터 기준 상대 각도)
+      camRot = lerpAngle(camRot, rot + camOffset, 0.08);
+      camera.position.x = lerp(camera.position.x, amb.position.x - Math.sin(camRot) * camDist, 0.10);
+      camera.position.y = lerp(camera.position.y, amb.position.y + CAM_H, 0.10);
+      camera.position.z = lerp(camera.position.z, amb.position.z - Math.cos(camRot) * camDist, 0.10);
+      camera.lookAt(amb.position.x, amb.position.y + 0.8, amb.position.z);
+
+      // 태양 추적
+      sun.position.set(amb.position.x + 10, 18, amb.position.z + 8);
+      sun.target.position.copy(amb.position);
+      sun.target.updateMatrixWorld();
+
+      renderer.render(scene, camera);
+    }
+
+    tick();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+  })();
+  </script>
+</body>
+</html>
